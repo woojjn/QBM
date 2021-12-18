@@ -4,7 +4,7 @@ from scipy.linalg import expm
 from scipy.optimize import minimize
 from scipy.spatial.distance import hamming
 
-class model:
+class QBM_model:
     def __init__(self, N, training_set, p=0.9, M=8, seed=None):
         
         self.N = N
@@ -16,16 +16,16 @@ class model:
             random.seed(seed)
 
         # visible state 생성
-        v_state = []
+        self.v_state = []
         for i in range(2**N):
             vi = bin(2**N - i - 1).split('b')[1].replace("1", "1 ").replace("0", "-1 ").split()
             vi.reverse()
             vi += [-1]*(N - len(vi))
             vi.reverse()
-            v_state.append(vi)
+            self.v_state.append(vi)
         
-        v_state.reverse()
-        v_state = np.array(v_state, dtype=int)
+        self.v_state.reverse()
+        self.v_state = np.array(self.v_state, dtype=int)
 
 
         # s_state 무작위적으로 생성
@@ -42,7 +42,7 @@ class model:
 
         for k in range(M):
             for v in range(2**N):
-                dv[k][v] = hamming(s_state[k], v_state[v]) * N
+                dv[k][v] = hamming(s_state[k], self.v_state[v]) * N
 
 
         # 예시 데이터 Pv_data_example[v] 생성
@@ -203,7 +203,7 @@ class model:
 
         return KL
     
-    def minimize_BM(self, x0=None, args=(), save=True, method="BFGS", jac=None,
+    def minimize_BM(self, x0=None, save=True, args=(), method="BFGS", jac=None,
                      hess=None, hessp=None, bounds=None, constraints=(), 
                      tol=None, callback=None, options=None):
 
@@ -225,7 +225,7 @@ class model:
         
         return result
 
-    def minimize_QBM(self, x0=None, args=(), save=True, method="BFGS", jac=None,
+    def minimize_QBM(self, x0=None, save=True, args=(), method="BFGS", jac=None,
                      hess=None, hessp=None, bounds=None, constraints=(), 
                      tol=None, callback=None, options=None):
 
@@ -257,8 +257,11 @@ class model:
     def get_Pv_data_example(self):
         return self.Pv_data_example
 
+    def get_v_state(self):
+        return self.v_state
 
-model = model(N=4, training_set=1000)
+
+model = QBM_model(N=4, training_set=1000)
 model.minimize_BM()
 model.minimize_QBM()
 
