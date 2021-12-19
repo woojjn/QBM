@@ -1,6 +1,7 @@
 # QBM
 
 양자 볼츠만 머신
+
 Reference:
 
 Amin, M. H., Andriyash, E., Rolfe, J., Kulchytskyy, B. & Melko, R. (2018, May 23).
