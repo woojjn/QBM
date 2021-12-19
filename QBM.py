@@ -1,30 +1,49 @@
 import random
 import numpy as np
 from scipy.linalg import expm
-from scipy.optimize import minimize
+from scipy.optimize import minimize, differential_evolution
 from scipy.spatial.distance import hamming
+
 
 class QBM_model:
     def __init__(self, N, training_set, p=0.9, M=8, seed=None):
+        """
+        Reference:
+        Amin, M. H., Andriyash, E., Rolfe, J., Kulchytskyy, B. & Melko, R. (2018, May 23).
+            Quantum Boltzmann Machine. Phys. Rev. Vol. 8. Retrieved from 
+            https://arxiv.org/pdf/1601.02036.pdf
+
+
+        N : 큐빗의 개수
+        training_set :  훈련 셋의 개수
+        p, M : 예시 데이터[Pv_data_example]를 만들 때 정하는 매개변수 (Referecne 식[53])
+        seed : 예시 데이터[Pv_data_example]와 이를 몬테카를로 시뮬레이션 한 [Pv_data]를 고정시키기 위한 seed
+        """
         
         self.N = N
-        self.result = {'BM_KL' : [], 'QBM_KL' : [], 'BM_result' : None, 'QBM_result' : None}
+
+        # save값의 default는 True입니다. save값을 True로 하면 minimize를 실행하는 동안의 KL이 저장됩니다.
         self.save = True
+        
+        # 결과는 4가지의 key를 가진 dict형태로 저장됩니다. 'BM_KL'과 'QBM_KL'은 minimize하는 동안 KL을 저장시켜 보여줍니다.
+        # 'BM_result', 'QBM_result'은 minimize한 결과를 보여줍니다. 이는 save값에 상관없이 저장됩니다.
+        self.result = {'BM_KL' : [], 'QBM_KL' : [], 'BM_result' : None, 'QBM_result' : None}
 
         # random seed 설정
         if seed:
             random.seed(seed)
 
+
         # visible state 생성
         self.v_state = []
+
         for i in range(2**N):
             vi = bin(2**N - i - 1).split('b')[1].replace("1", "1 ").replace("0", "-1 ").split()
             vi.reverse()
             vi += [-1]*(N - len(vi))
             vi.reverse()
             self.v_state.append(vi)
-        
-        self.v_state.reverse()
+
         self.v_state = np.array(self.v_state, dtype=int)
 
 
@@ -37,7 +56,7 @@ class QBM_model:
                 s_state[k][i] = r
         
         
-        # v_state와 s_state[k]의 해밍 거리 dv[k][v_state]
+        # v_state와 s_state[k]의 해밍 거리: dv[k][v_state]
         dv = np.zeros([M, 2**N], dtype=int)
 
         for k in range(M):
@@ -69,6 +88,7 @@ class QBM_model:
 
     def iden(self, N):
         # 2**N차원 identity matrix
+
         M = np.identity(2**N)
         return M
 
@@ -120,7 +140,7 @@ class QBM_model:
 
         # 매개변수
         b = np.zeros(self.N)
-        w = np.zeros((self.N, self.N))
+        w = np.zeros([self.N, self.N])
 
 
         # 매개변수 행렬 생성
@@ -165,7 +185,7 @@ class QBM_model:
         # 매개변수
         gamma = theta[0]
         b = np.zeros(self.N)
-        w = np.zeros((self.N, self.N))
+        w = np.zeros([self.N, self.N])
 
 
         # 매개변수 행렬 생성
@@ -202,10 +222,17 @@ class QBM_model:
             self.result['QBM_KL'].append(KL)
 
         return KL
-    
+
+    # scipy.optimize.minimize
     def minimize_BM(self, x0=None, save=True, args=(), method="BFGS", jac=None,
                      hess=None, hessp=None, bounds=None, constraints=(), 
                      tol=None, callback=None, options=None):
+
+        """
+        x0를 정하지 않으면, 모든 값이 0.1로 고정됩니다.
+        save를 False로 정하면, minimize 동안 KL 값이 저장되지 않습니다.
+        method의 기본값은 "BFGS"입니다.
+        """
 
         if not save:
             self.save = False
@@ -225,9 +252,16 @@ class QBM_model:
         
         return result
 
+    # scipy.optimize.minimize
     def minimize_QBM(self, x0=None, save=True, args=(), method="BFGS", jac=None,
                      hess=None, hessp=None, bounds=None, constraints=(), 
                      tol=None, callback=None, options=None):
+
+        """
+        x0를 정하지 않으면, 모든 값이 0.1로 고정됩니다.
+        save를 False로 정하면, minimize 동안 KL 값이 저장되지 않습니다.
+        method의 기본값은 "BFGS"입니다.
+        """
 
         if not save:
             self.save = False
@@ -243,6 +277,75 @@ class QBM_model:
         result = minimize(self.QBM, x0, args=args, method=method, jac=jac, hess=hess,
                           hessp=hessp, bounds=bounds, constraints=constraints,
                           tol=tol, callback=callback, options=options)
+
+        self.result["QBM_result"] = result
+        
+        return result
+
+    # scipy.optimize.differentail_evolution
+    def differential_evolution_BM(self, save=True, bounds=None, args=(), strategy='best1bin',
+                                  maxiter=1000, popsize=15, tol=0.01,
+                                  mutation=(0.5, 1), recombination=0.7, seed=None,
+                                  callback=None, disp=False, polish=True,
+                                  init='latinhypercube', atol=0, updating='immediate',
+                                  workers=1, constraints=()):
+
+        """
+        bounds를 정하지 않으면, 모든 값이 (-10, 10)으로 고정됩니다.
+        save를 False로 정하면, differential_evolution 동안 KL 값이 저장되지 않습니다.
+        """
+
+        if not save:
+            self.save = False
+        else:
+            self.save = True
+        
+        if bounds == None:
+            bounds = [(-10, 10)] * ((self.N**2 + self.N)//2)
+        elif len(bounds) != (self.N**2 + self.N)//2:
+            raise Exception("매개변수의 개수[(N**2 + N)/2]만큼 bounds를 설정해야 합니다.")
+
+        result = differential_evolution(self.BM, bounds=bounds, args=args, strategy=strategy,
+                                        maxiter=maxiter, popsize=popsize, tol=tol,
+                                        mutation=mutation, recombination=recombination, seed=seed,
+                                        callback=callback, disp=disp, polish=polish,
+                                        init=init, atol=atol, updating=updating,
+                                        workers=workers, constraints=constraints)
+
+        self.result["BM_result"] = result
+        
+        return result
+
+    # scipy.optimize.differential_evolution
+    def differential_evolution_QBM(self, save=True, bounds=None, args=(), strategy='best1bin',
+                                  maxiter=1000, popsize=15, tol=0.01,
+                                  mutation=(0.5, 1), recombination=0.7, seed=None,
+                                  callback=None, disp=False, polish=True,
+                                  init='latinhypercube', atol=0, updating='immediate',
+                                  workers=1, constraints=()):
+
+        """
+        bounds를 정하지 않으면, 모든 값이 (-10, 10)으로 고정됩니다.
+        save를 False로 정하면, differential_evolution 동안 KL 값이 저장되지 않습니다.
+        """
+
+        if not save:
+            self.save = False
+        else:
+            self.save = True
+        
+        if bounds == None:
+            bounds = [(-10, 10)] * ((self.N**2 + self.N)//2 + 1)
+
+        elif len(bounds) != (self.N**2 + self.N)//2 + 1:
+            raise Exception("매개변수의 개수[(N**2 + N)/2 + 1]만큼 bounds를 설정해야 합니다.")
+
+        result = differential_evolution(self.QBM, bounds=bounds, args=args, strategy=strategy,
+                                        maxiter=maxiter, popsize=popsize, tol=tol,
+                                        mutation=mutation, recombination=recombination, seed=seed,
+                                        callback=callback, disp=disp, polish=polish,
+                                        init=init, atol=atol, updating=updating,
+                                        workers=workers, constraints=constraints)
 
         self.result["QBM_result"] = result
         
