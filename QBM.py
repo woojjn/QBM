@@ -1,3 +1,5 @@
+import os
+import pickle
 import random
 import numpy as np
 from scipy.linalg import expm
@@ -21,6 +23,8 @@ class QBM_model:
         """
         
         self.N = N
+        self.M = M
+        self.training_set = training_set
 
         # save값의 default는 True입니다. save값을 True로 하면 minimize를 실행하는 동안의 KL이 저장됩니다.
         self.save = True
@@ -351,6 +355,66 @@ class QBM_model:
         
         return result
 
+    # 결과값 pickle로 저장하기
+    def result_to_pickle(self, dir_name = None, file_name=None):
+        import pickle
+        result = self.get_result()
+
+        # result 디렉토리가 없으면 생성
+        if not os.path.exists("result"):
+            os.mkdir("result")
+
+        # 결과값이 비어있으면 저장하지 않기
+        if not any(result.values()):
+            return print("저장된 결과값이 없습니다.")
+
+
+        if dir_name == None:
+            dir_name = f"N{self.N}"
+
+        path = f"result/{dir_name}/"
+
+        # result/dir_name 디렉토리가 없으면 생성
+        if not os.path.exists(path):
+            os.mkdir(path)
+
+        # 덮어쓰기 방지
+        if file_name == None:
+            trial = 0
+            file_name = f"t{self.training_set}_M{self.M}_trial{trial}"
+
+            while os.path.exists(path + file_name):
+                trial += 1
+                file_name = f"t{self.training_set}_M{self.M}_trial{trial}"
+
+        file_name = path + file_name
+
+        # pickle파일 만들기
+        with open(file_name, 'wb') as f:
+            pickle.dump(result, f)
+
+        return print(file_name, "저장되었습니다.")
+
+    def plot_from_result(self, options=["BM", "QBM"]):
+        import matplotlib.pyplot as plt
+        result = self.get_result()
+            
+        for option in options:
+            print(f"{option}\t결과값", end=' : ')
+            option += "_result"
+            print(result[option].fun)
+
+        for option in options:
+            option += "_KL"
+            plt.plot(range(len(result[option])), result[option])
+
+        plt.xlabel("iteration")
+        plt.ylabel("KL")
+        plt.legend(options)
+
+        plt.show()
+
+
     def get_result(self):
         return self.result
 
@@ -364,13 +428,78 @@ class QBM_model:
         return self.v_state
 
 
-model = QBM_model(N=4, training_set=1000)
-model.minimize_BM()
-model.minimize_QBM()
+class pickle_data_processing:
+    def __init__(self, Ns, training_sets, M=8, trials=10, path="result/"):
 
-result = model.get_result()
+        self.trials = trials
+        self.datatype = None
+        if type(Ns) == int and type(training_sets) == int:
+            self.single_data = {"BM":[], "QBM":[]}
+            for trial in range(trials):
+                file_name = path + f"N{Ns}/t{training_sets}_M{M}_trial{trial}"
+                with open(file_name, "rb") as f:
+                    data = pickle.load(f)
 
-print(result["BM_KL"][:5])
-print(result["QBM_KL"][:5])
-print(result["BM_result"])
-print(result["QBM_result"])
+                self.single_data["BM"].append(data["BM_result"].fun)
+                self.single_data["QBM"].append(data["QBM_result"].fun)
+
+            self.datatype = "single"
+            self.single_data["BM"] = np.array(self.single_data["BM"])
+            self.single_data["QBM"] = np.array(self.single_data["QBM"])
+            print("single_data")
+
+        elif type(training_sets) == int:
+            self.N_data = {"BM":[[] for _ in range(trials)], "QBM":[[] for _ in range(trials)]}
+            for trial in range(trials):
+                for N in Ns:
+                    file_name = path + f"N{N}/t{training_sets}_M{M}_trial{trial}"
+                    with open(file_name, "rb") as f:
+                        data = pickle.load(f)
+
+                    self.N_data["BM"][trial].append(data["BM_result"].fun)
+                    self.N_data["QBM"][trial].append(data["QBM_result"].fun)
+
+            self.datatype = "N"
+            self.N_data["BM"] = np.array(self.N_data["BM"])
+            self.N_data["QBM"] = np.array(self.N_data["QBM"])
+            print("N_data")
+            
+
+        elif type(Ns) == int:
+            self.training_set_data = {"BM":[[] for _ in range(trials)], "QBM":[[] for _ in range(trials)]}
+            for trial in range(trials):
+                for training_set in training_sets:
+                    file_name = path + f"N{Ns}/t{training_set}_M{M}_trial{trial}"
+                    with open(file_name, "rb") as f:
+                        data = pickle.load(f)
+
+                    self.training_set_data["BM"][trial].append(data["BM_result"].fun)
+                    self.training_set_data["QBM"][trial].append(data["QBM_result"].fun)
+
+            self.datatype = "training_set_data"
+            self.training_set_data["BM"] = np.array(self.training_set_data["BM"])
+            self.training_set_data["QBM"] = np.array(self.training_set_data["QBM"])
+            print("training_set_data")
+
+        else:
+            raise TypeError("Ns 혹은 training_sets 중 하나를 list로 정해주세요.")
+
+
+    def get_single_data(self):
+        return self.single_data
+
+    def get_N_data(self, mean=True):
+        if mean:
+            self.N_data["BM"] = sum(self.N_data["BM"])/self.trials
+            self.N_data["QBM"] = sum(self.N_data["QBM"])/self.trials
+            return self.N_data
+        else:
+            return self.N_data
+
+    def get_training_set_data(self, mean=True):
+        if mean:
+            self.training_set_data["BM"] = sum(self.training_set_data["BM"])/self.trials
+            self.training_set_data["QBM"] = sum(self.training_set_data["QBM"])/self.trials
+            return self.training_set_data
+        else:
+            return self.training_set_data
