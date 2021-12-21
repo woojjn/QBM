@@ -29,9 +29,10 @@ class QBM_model:
         # save값의 default는 True입니다. save값을 True로 하면 minimize를 실행하는 동안의 KL이 저장됩니다.
         self.save = True
         
-        # 결과는 4가지의 key를 가진 dict형태로 저장됩니다. 'BM_KL'과 'QBM_KL'은 minimize하는 동안 KL을 저장시켜 보여줍니다.
-        # 'BM_result', 'QBM_result'은 minimize한 결과를 보여줍니다. 이는 save값에 상관없이 저장됩니다.
-        self.result = {'BM_KL' : [], 'QBM_KL' : [], 'BM_result' : None, 'QBM_result' : None}
+        # 결과는 6가지의 key를 가진 dict형태로 저장됩니다. 'BM_KL'과 'QBM_KL'은 minimize하는 동안 KL을 저장시켜 보여줍니다.
+        # 'Pv_data_example'과 'Pv_data'는 예시 데이터와 훈련 데이터를 저장합니다.
+        # 'BM_result', 'QBM_result'은 minimize한 결과를 보여줍니다.
+        self.result = {'Pv_data_example' : None, 'Pv_data' : None, 'BM_KL' : [], 'QBM_KL' : [], 'BM_result' : None, 'QBM_result' : None}
 
         # random seed 설정
         if seed:
@@ -75,7 +76,8 @@ class QBM_model:
             for k in range(M):
                 self.Pv_data_example[v] += p**(N - dv[k][v])*(1 - p)**dv[k][v] / M
 
-        
+        self.result['Pv_data_example'] =  self.Pv_data_example
+
         # training_set만큼 예시 데이터에 대한 몬테카를로 시뮬레이션을 실행한 후의 확률 분포 Pv_data[v]
         self.Pv_data= np.zeros(2**N)
 
@@ -89,6 +91,9 @@ class QBM_model:
                     self.Pv_data[i] += 1
                 
         self.Pv_data /= training_set
+
+        self.result['Pv_data'] =  self.Pv_data
+
 
     def iden(self, N):
         # 2**N차원 identity matrix
@@ -170,10 +175,10 @@ class QBM_model:
         for v in range(2**self.N):
             Pv = np.trace(np.dot(self.lambda_v(v), rho))
             L = -self.Pv_data[v] * np.log(Pv)
-            try:
-                L_min = -self.Pv_data[v] * np.log(self.Pv_data[v])
-            except:
+            if self.Pv_data[v] == 0:
                 L_min = 0
+            else:
+                L_min = -self.Pv_data[v] * np.log(self.Pv_data[v])
 
             KL += L - L_min
         
@@ -215,10 +220,10 @@ class QBM_model:
         for v in range(2**self.N):
             Pv = np.trace(np.dot(self.lambda_v(v), rho))
             L = -self.Pv_data[v] * np.log(Pv)
-            try:
-                L_min = -self.Pv_data[v] * np.log(self.Pv_data[v])
-            except:
+            if self.Pv_data[v] == 0:
                 L_min = 0
+            else:
+                L_min = -self.Pv_data[v] * np.log(self.Pv_data[v])
 
             KL += L - L_min
         
@@ -252,6 +257,9 @@ class QBM_model:
                           hessp=hessp, bounds=bounds, constraints=constraints,
                           tol=tol, callback=callback, options=options)
 
+        if not result.success:
+            return print("수렴에 실패했습니다.")
+
         self.result["BM_result"] = result
         
         return result
@@ -278,9 +286,12 @@ class QBM_model:
         elif len(x0) != (self.N**2 + self.N)//2 + 1:
             raise Exception("매개변수의 개수[(N**2 + N)/2 + 1]만큼 x0를 설정해야 합니다.")
 
-        result = minimize(self.QBM, x0, args=args, method=method, jac=jac, hess=hess,
+        result = minimize(self.QBM, x0=x0, args=args, method=method, jac=jac, hess=hess,
                           hessp=hessp, bounds=bounds, constraints=constraints,
                           tol=tol, callback=callback, options=options)
+
+        if not result.success:
+            return print("수렴에 실패했습니다.", self.Pv_data_example, self.Pv_data, sep='\n')
 
         self.result["QBM_result"] = result
         
@@ -364,11 +375,6 @@ class QBM_model:
         if not os.path.exists("result"):
             os.mkdir("result")
 
-        # 결과값이 비어있으면 저장하지 않기
-        if not any(result.values()):
-            return print("저장된 결과값이 없습니다.")
-
-
         if dir_name == None:
             dir_name = f"N{self.N}"
 
@@ -381,11 +387,11 @@ class QBM_model:
         # 덮어쓰기 방지
         if file_name == None:
             trial = 0
-            file_name = f"t{self.training_set}_M{self.M}_trial{trial}"
+            file_name = f"t{self.training_set}_M{self.M}_trial{trial}.pickle"
 
             while os.path.exists(path + file_name):
                 trial += 1
-                file_name = f"t{self.training_set}_M{self.M}_trial{trial}"
+                file_name = f"t{self.training_set}_M{self.M}_trial{trial}.pickle"
 
         file_name = path + file_name
 
@@ -430,13 +436,35 @@ class QBM_model:
 
 class pickle_data_processing:
     def __init__(self, Ns, training_sets, M=8, trials=10, path="result/"):
+        """
+        path + f"N{Ns}/t{training_sets}_M{M}+trial{trial}.pickle" 데이터를 얻습니다.
+        
 
+        Ns : list
+        training_sets : int
+
+        or
+
+        Ns : int
+        training_sets : list
+
+        와 같이 변수를 정해주세요.
+
+        만약 Ns를 하나의 값으로(int) 정하면, get_N_data 함수를 통해 training_sets의 데이터들을 얻을 수 있습니다.
+        training_sets의 경우는 get_training_set_data 함수를 통해 얻을 수 있습니다.
+
+        둘 다 int 타입으로 정할 경우, get_single_data 함수를 통해 값을 얻을 수 있습니다.
+        """
+        self.Ns = Ns
+        self.training_sets = training_sets
         self.trials = trials
         self.datatype = None
+
+        # single_data
         if type(Ns) == int and type(training_sets) == int:
             self.single_data = {"BM":[], "QBM":[]}
             for trial in range(trials):
-                file_name = path + f"N{Ns}/t{training_sets}_M{M}_trial{trial}"
+                file_name = path + f"N{Ns}/t{training_sets}_M{M}_trial{trial}.pickle"
                 with open(file_name, "rb") as f:
                     data = pickle.load(f)
 
@@ -446,13 +474,13 @@ class pickle_data_processing:
             self.datatype = "single"
             self.single_data["BM"] = np.array(self.single_data["BM"])
             self.single_data["QBM"] = np.array(self.single_data["QBM"])
-            print("single_data")
 
+        # N_data
         elif type(training_sets) == int:
             self.N_data = {"BM":[[] for _ in range(trials)], "QBM":[[] for _ in range(trials)]}
             for trial in range(trials):
                 for N in Ns:
-                    file_name = path + f"N{N}/t{training_sets}_M{M}_trial{trial}"
+                    file_name = path + f"N{N}/t{training_sets}_M{M}_trial{trial}.pickle"
                     with open(file_name, "rb") as f:
                         data = pickle.load(f)
 
@@ -462,28 +490,61 @@ class pickle_data_processing:
             self.datatype = "N"
             self.N_data["BM"] = np.array(self.N_data["BM"])
             self.N_data["QBM"] = np.array(self.N_data["QBM"])
-            print("N_data")
             
-
+        # training_set_data
         elif type(Ns) == int:
             self.training_set_data = {"BM":[[] for _ in range(trials)], "QBM":[[] for _ in range(trials)]}
             for trial in range(trials):
                 for training_set in training_sets:
-                    file_name = path + f"N{Ns}/t{training_set}_M{M}_trial{trial}"
+                    file_name = path + f"N{Ns}/t{training_set}_M{M}_trial{trial}.pickle"
                     with open(file_name, "rb") as f:
                         data = pickle.load(f)
 
                     self.training_set_data["BM"][trial].append(data["BM_result"].fun)
                     self.training_set_data["QBM"][trial].append(data["QBM_result"].fun)
 
-            self.datatype = "training_set_data"
+            self.datatype = "training_set"
             self.training_set_data["BM"] = np.array(self.training_set_data["BM"])
             self.training_set_data["QBM"] = np.array(self.training_set_data["QBM"])
-            print("training_set_data")
 
         else:
             raise TypeError("Ns 혹은 training_sets 중 하나를 list로 정해주세요.")
 
+    
+    def plot(self, xscale="linear"):
+        import matplotlib.pyplot as plt
+
+        if self.datatype == "single":
+            return print("single_data는 plot할 수 없습니다.")
+
+        elif self.datatype == "N":
+            Ns = self.Ns
+            N_data = self.get_N_data()
+
+            plt.scatter(Ns, N_data["BM"])
+            plt.scatter(Ns, N_data["QBM"])
+
+            plt.title(f"training set={self.training_sets}")
+            plt.xticks(self.Ns)
+            plt.xlabel("N")
+            plt.ylabel("KL")
+            plt.legend(["BM", "QBM"])
+
+        elif self.datatype == "training_set":
+            training_sets = self.training_sets
+            training_set_data = self.get_training_set_data()
+
+            plt.scatter(training_sets, training_set_data["BM"])
+            plt.scatter(training_sets, training_set_data["QBM"])
+
+            plt.title(f"N={self.Ns}")
+            plt.xticks(self.training_sets)
+            plt.xlabel("training_set")
+            plt.ylabel("KL")
+            plt.legend(["BM", "QBM"])
+            plt.xscale(xscale)
+
+        plt.show()
 
     def get_single_data(self):
         return self.single_data
