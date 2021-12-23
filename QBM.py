@@ -1,4 +1,5 @@
 import os
+import copy
 import pickle
 import random
 import numpy as np
@@ -433,8 +434,8 @@ class QBM_model:
     def get_v_state(self):
         return self.v_state
 
-
-class pickle_data_processing:
+# pickle 데이터 처리
+class PickleDataProcessing:
     def __init__(self, Ns, training_sets, M=8, trials=10, path="result/"):
         """
         path + f"N{Ns}/t{training_sets}_M{M}+trial{trial}.pickle" 데이터를 얻습니다.
@@ -459,23 +460,18 @@ class pickle_data_processing:
         self.training_sets = training_sets
         self.trials = trials
         self.datatype = None
+        self.top = 10
 
-        # single_data
+        # single_data(pickle 파일 하나만 분석)
         if type(Ns) == int and type(training_sets) == int:
-            self.single_data = {"BM":[], "QBM":[]}
-            for trial in range(trials):
-                file_name = path + f"N{Ns}/t{training_sets}_M{M}_trial{trial}.pickle"
-                with open(file_name, "rb") as f:
-                    data = pickle.load(f)
-
-                self.single_data["BM"].append(data["BM_result"].fun)
-                self.single_data["QBM"].append(data["QBM_result"].fun)
+            file_name = path + f"N{Ns}/t{training_sets}_M{M}_trial{trials}.pickle"
+            with open(file_name, "rb") as f:
+                data = pickle.load(f)
 
             self.datatype = "single"
-            self.single_data["BM"] = np.array(self.single_data["BM"])
-            self.single_data["QBM"] = np.array(self.single_data["QBM"])
+            self.single_data = data
 
-        # N_data
+        # N_data(training_set은 고정, N에 따른 데이터 분석)
         elif type(training_sets) == int:
             self.N_data = {"BM":[[] for _ in range(trials)], "QBM":[[] for _ in range(trials)]}
             for trial in range(trials):
@@ -491,7 +487,7 @@ class pickle_data_processing:
             self.N_data["BM"] = np.array(self.N_data["BM"])
             self.N_data["QBM"] = np.array(self.N_data["QBM"])
             
-        # training_set_data
+        # training_set_data(N은 고정, training_set에 따른 데이터 분석)
         elif type(Ns) == int:
             self.training_set_data = {"BM":[[] for _ in range(trials)], "QBM":[[] for _ in range(trials)]}
             for trial in range(trials):
@@ -511,36 +507,59 @@ class pickle_data_processing:
             raise TypeError("Ns 혹은 training_sets 중 하나를 list로 정해주세요.")
 
     
-    def plot(self, xscale="linear"):
+    # plot
+    """
+    single_data : iteration에 따른 KL값
+    N_data : N에 따른 KL값
+    training_set_data : training_set에 따른 KL값
+    """
+    def plot(self, xscale="linear", ylim=None, top=None):
         import matplotlib.pyplot as plt
 
+        """
+        xscale : xscale을 'log'로 설정 가능
+        ylim : y의 최대 최솟값 설정 가능 tuple
+        top : trial 중 가장 작은 값 top개만 선정하여 plot
+        """
+
         if self.datatype == "single":
-            return print("single_data는 plot할 수 없습니다.")
+            single_data = self.get_single_data()
+
+            plt.plot(range(len(single_data["BM_KL"])), single_data["BM_KL"])
+            plt.plot(range(len(single_data["QBM_KL"])), single_data["QBM_KL"])
+            
+            plt.title(f"N={self.Ns}, training set={self.training_sets}, trial={self.trials}")
+            plt.xlabel("iteration")
+            plt.ylabel("KL")
+            plt.ylim(ylim)
+            plt.legend(["BM", "QBM"])
+
 
         elif self.datatype == "N":
             Ns = self.Ns
-            N_data = self.get_N_data()
+            N_data = self.get_N_data(top=top)
 
             plt.scatter(Ns, N_data["BM"])
             plt.scatter(Ns, N_data["QBM"])
 
             plt.title(f"training set={self.training_sets}")
-            plt.xticks(self.Ns)
+            plt.xticks(self.Ns, map(str, map(int, self.Ns)))
             plt.xlabel("N")
             plt.ylabel("KL")
+            plt.ylim(ylim)
             plt.legend(["BM", "QBM"])
 
         elif self.datatype == "training_set":
             training_sets = self.training_sets
-            training_set_data = self.get_training_set_data()
+            training_set_data = self.get_training_set_data(top=top)
 
             plt.scatter(training_sets, training_set_data["BM"])
             plt.scatter(training_sets, training_set_data["QBM"])
 
             plt.title(f"N={self.Ns}")
-            plt.xticks(self.training_sets)
             plt.xlabel("training_set")
             plt.ylabel("KL")
+            plt.ylim(ylim)
             plt.legend(["BM", "QBM"])
             plt.xscale(xscale)
 
@@ -549,18 +568,32 @@ class pickle_data_processing:
     def get_single_data(self):
         return self.single_data
 
-    def get_N_data(self, mean=True):
-        if mean:
-            self.N_data["BM"] = sum(self.N_data["BM"])/self.trials
-            self.N_data["QBM"] = sum(self.N_data["QBM"])/self.trials
-            return self.N_data
-        else:
-            return self.N_data
+    def get_N_data(self, mean=True, top=None):
+        if top == None:
+            top = self.trials
 
-    def get_training_set_data(self, mean=True):
+        self.top = top
+        data = copy.deepcopy(self.N_data)
         if mean:
-            self.training_set_data["BM"] = sum(self.training_set_data["BM"])/self.trials
-            self.training_set_data["QBM"] = sum(self.training_set_data["QBM"])/self.trials
-            return self.training_set_data
+            data["BM"], data["QBM"] = [], []
+            for i in range(len(self.Ns)):
+                data["BM"].append(sum(sorted(self.N_data["BM"].T[i][:self.top]))/self.top)
+                data["QBM"].append(sum(sorted(self.N_data["QBM"].T[i][:self.top]))/self.top)
+            return data
         else:
-            return self.training_set_data
+            return data
+
+    def get_training_set_data(self, mean=True, top=None):
+        if top == None:
+            top = self.trials
+
+        self.top = top
+        data = copy.deepcopy(self.training_set_data)
+        if mean:
+            data["BM"], data["QBM"] = [], []
+            for i in range(len(self.training_sets)):
+                data["BM"].append(sum(sorted(self.training_set_data["BM"].T[i][:self.top]))/self.top)
+                data["QBM"].append(sum(sorted(self.training_set_data["QBM"].T[i][:self.top]))/self.top)
+            return data
+        else:
+            return data
