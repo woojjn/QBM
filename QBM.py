@@ -59,6 +59,7 @@ class QBM_model:
         for k in range(M):
             for i in range(N):
                 r = random.choice([-1, 1])
+                # r = random.choices([-1, 1], weights=[1 - p, p])[0]
                 s_state[k][i] = r
         
         
