@@ -102,3 +102,5 @@ N_data의 경우, N에 따른 KL의 평균값을 plot합니다.
 training_set_data의 경우, training_set에 따른 KL의 평균값을 plot합니다.
 
 top을 설정한 경우, trial 중 가장 작은 top개의 trial 데이터를 평균 내어 plot합니다.
+
+![output_20~30](https://user-images.githubusercontent.com/76618935/152949376-3bf017f3-4833-473d-9414-842eb2da888f.png)
