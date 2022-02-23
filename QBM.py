@@ -30,7 +30,7 @@ class QBM_model:
         # save값의 default는 True입니다. save값을 True로 하면 minimize를 실행하는 동안의 KL이 저장됩니다.
         self.save = True
         
-        # 결과는 6가지의 key를 가진 dict형태로 저장됩니다. 'BM_KL'과 'QBM_KL'은 minimize하는 동안 KL을 저장시켜 보여줍니다.
+        # 결과는 6가지의 key를 가진 dict형태로 저장됩니다. 'BM_KL'과 'QBM_KL'은 minimize하는 동안 KL이 저장되는 key입니다.
         # 'Pv_data_example'과 'Pv_data'는 예시 데이터와 훈련 데이터를 저장합니다.
         # 'BM_result', 'QBM_result'은 minimize한 결과를 보여줍니다.
         self.result = {'Pv_data_example' : None, 'Pv_data' : None, 'BM_KL' : [], 'QBM_KL' : [], 'BM_result' : None, 'QBM_result' : None}
@@ -260,7 +260,7 @@ class QBM_model:
                           tol=tol, callback=callback, options=options)
 
         if not result.success:
-            return print("수렴에 실패했습니다.")
+            print("수렴에 실패했습니다.")
 
         self.result["BM_result"] = result
         
@@ -293,7 +293,7 @@ class QBM_model:
                           tol=tol, callback=callback, options=options)
 
         if not result.success:
-            return print("수렴에 실패했습니다.", self.Pv_data_example, self.Pv_data, sep='\n')
+            print("수렴에 실패했습니다.", self.Pv_data_example, self.Pv_data, sep='\n')
 
         self.result["QBM_result"] = result
         
@@ -437,7 +437,7 @@ class QBM_model:
 
 # pickle 데이터 처리
 class PickleDataProcessing:
-    def __init__(self, Ns, training_sets, M=8, trials=10, path="result/"):
+    def __init__(self, Ns, training_sets, M=8, trial_range=(0, 10), path="result/"):
         """
         path + f"N{Ns}/t{training_sets}_M{M}+trial{trial}.pickle" 데이터를 얻습니다.
         
@@ -459,13 +459,17 @@ class PickleDataProcessing:
         """
         self.Ns = Ns
         self.training_sets = training_sets
-        self.trials = trials
         self.datatype = None
-        self.top = 10
+
+        if type(trial_range) == int:
+            self.trial = trial_range
+        elif type(trial_range) == tuple:
+            self.start, self.end = trial_range
+            self.range = range(self.start, self.end)
 
         # single_data(pickle 파일 하나만 분석)
-        if type(Ns) == int and type(training_sets) == int:
-            file_name = path + f"N{Ns}/t{training_sets}_M{M}_trial{trials}.pickle"
+        if type(Ns) == int and type(training_sets) == int and type(trial_range) == int:
+            file_name = path + f"N{Ns}/t{training_sets}_M{M}_trial{self.trial}.pickle"
             with open(file_name, "rb") as f:
                 data = pickle.load(f)
 
@@ -474,15 +478,15 @@ class PickleDataProcessing:
 
         # N_data(training_set은 고정, N에 따른 데이터 분석)
         elif type(training_sets) == int:
-            self.N_data = {"BM":[[] for _ in range(trials)], "QBM":[[] for _ in range(trials)]}
-            for trial in range(trials):
+            self.N_data = {"BM":[[] for _ in self.range], "QBM":[[] for _ in self.range]}
+            for i, trial in enumerate(self.range):
                 for N in Ns:
                     file_name = path + f"N{N}/t{training_sets}_M{M}_trial{trial}.pickle"
                     with open(file_name, "rb") as f:
                         data = pickle.load(f)
 
-                    self.N_data["BM"][trial].append(data["BM_result"].fun)
-                    self.N_data["QBM"][trial].append(data["QBM_result"].fun)
+                    self.N_data["BM"][i].append(data["BM_result"].fun)
+                    self.N_data["QBM"][i].append(data["QBM_result"].fun)
 
             self.datatype = "N"
             self.N_data["BM"] = np.array(self.N_data["BM"])
@@ -490,15 +494,15 @@ class PickleDataProcessing:
             
         # training_set_data(N은 고정, training_set에 따른 데이터 분석)
         elif type(Ns) == int:
-            self.training_set_data = {"BM":[[] for _ in range(trials)], "QBM":[[] for _ in range(trials)]}
-            for trial in range(trials):
+            self.training_set_data = {"BM":[[] for _ in self.range], "QBM":[[] for _ in self.range]}
+            for i, trial in enumerate(self.range):
                 for training_set in training_sets:
                     file_name = path + f"N{Ns}/t{training_set}_M{M}_trial{trial}.pickle"
                     with open(file_name, "rb") as f:
                         data = pickle.load(f)
 
-                    self.training_set_data["BM"][trial].append(data["BM_result"].fun)
-                    self.training_set_data["QBM"][trial].append(data["QBM_result"].fun)
+                    self.training_set_data["BM"][i].append(data["BM_result"].fun)
+                    self.training_set_data["QBM"][i].append(data["QBM_result"].fun)
 
             self.datatype = "training_set"
             self.training_set_data["BM"] = np.array(self.training_set_data["BM"])
@@ -514,7 +518,7 @@ class PickleDataProcessing:
     N_data : N에 따른 KL값
     training_set_data : training_set에 따른 KL값
     """
-    def plot(self, xscale="linear", ylim=None, top=None):
+    def plot(self, xscale="linear", ylim=None):
         import matplotlib.pyplot as plt
 
         """
@@ -538,10 +542,12 @@ class PickleDataProcessing:
 
         elif self.datatype == "N":
             Ns = self.Ns
-            N_data = self.get_N_data(top=top)
+            N_data = self.get_N_data()
 
-            plt.scatter(Ns, N_data["BM"])
-            plt.scatter(Ns, N_data["QBM"])
+            BM_yerr = [N_data["BM_std"], N_data["BM_std"]]
+            QBM_yerr = [N_data["QBM_std"], N_data["QBM_std"]]
+            plt.errorbar(Ns, N_data["BM"], yerr=BM_yerr, fmt='o', capsize=5, c="royalblue")
+            plt.errorbar(Ns, N_data["QBM"], yerr=QBM_yerr, fmt='o', capsize=5, c="tomato")
 
             plt.title(f"training set={self.training_sets}")
             plt.xticks(self.Ns, map(str, map(int, self.Ns)))
@@ -552,10 +558,12 @@ class PickleDataProcessing:
 
         elif self.datatype == "training_set":
             training_sets = self.training_sets
-            training_set_data = self.get_training_set_data(top=top)
+            training_set_data = self.get_training_set_data()
 
-            plt.scatter(training_sets, training_set_data["BM"])
-            plt.scatter(training_sets, training_set_data["QBM"])
+            BM_yerr = [training_set_data["BM_std"], training_set_data["BM_std"]]
+            QBM_yerr = [training_set_data["QBM_std"], training_set_data["QBM_std"]]
+            plt.errorbar(training_sets, training_set_data["BM"], yerr=BM_yerr, fmt='o', capsize=5, c="royalblue")
+            plt.errorbar(training_sets, training_set_data["QBM"], yerr=QBM_yerr, fmt='o', capsize=5, c="tomato")
 
             plt.title(f"N={self.Ns}")
             plt.xlabel("training_set")
@@ -569,32 +577,26 @@ class PickleDataProcessing:
     def get_single_data(self):
         return self.single_data
 
-    def get_N_data(self, mean=True, top=None):
-        if top == None:
-            top = self.trials
-
-        self.top = top
+    def get_N_data(self, mean=True):
         data = copy.deepcopy(self.N_data)
         if mean:
-            data["BM"], data["QBM"] = [], []
             for i in range(len(self.Ns)):
-                data["BM"].append(sum(sorted(self.N_data["BM"].T[i][:self.top]))/self.top)
-                data["QBM"].append(sum(sorted(self.N_data["QBM"].T[i][:self.top]))/self.top)
+                data["BM"] = np.mean(self.N_data["BM"], axis=0)
+                data["QBM"] = np.mean(self.N_data["QBM"], axis=0)
+                data["BM_std"] = np.std(self.N_data["BM"], axis=0)
+                data["QBM_std"] = np.std(self.N_data["QBM"], axis=0)
             return data
         else:
             return data
 
-    def get_training_set_data(self, mean=True, top=None):
-        if top == None:
-            top = self.trials
-
-        self.top = top
+    def get_training_set_data(self, mean=True):
         data = copy.deepcopy(self.training_set_data)
         if mean:
-            data["BM"], data["QBM"] = [], []
             for i in range(len(self.training_sets)):
-                data["BM"].append(sum(sorted(self.training_set_data["BM"].T[i][:self.top]))/self.top)
-                data["QBM"].append(sum(sorted(self.training_set_data["QBM"].T[i][:self.top]))/self.top)
+                data["BM"] = np.mean(self.training_set_data["BM"], axis=0)
+                data["QBM"] = np.mean(self.training_set_data["QBM"], axis=0)
+                data["BM_std"] = np.std(self.training_set_data["BM"], axis=0)
+                data["QBM_std"] = np.std(self.training_set_data["QBM"], axis=0)
             return data
         else:
             return data
