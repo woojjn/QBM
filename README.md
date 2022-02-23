@@ -102,3 +102,15 @@ N_data의 경우, N에 따른 KL의 평균값을 plot합니다.
 training_set_data의 경우, training_set에 따른 KL의 평균값을 plot합니다.
 
 top을 설정한 경우, trial 중 가장 작은 top개의 trial 데이터를 평균 내어 plot합니다.
+
+## 여러가지 경우의 plot
+
+**p = 0.6**의 경우, training set이 증가함에 따라 KL이 감소하는 경향을 보임(이상적)
+
+![output_20~30](https://user-images.githubusercontent.com/76618935/152949376-3bf017f3-4833-473d-9414-842eb2da888f.png)
+
+**s_state의 확률 weight를 p와 동일하게 한** 경우, 한 번씩 값이 튀는 것을 제외하면 이상적인 경향을 보임
+
+![output_30~40](https://user-images.githubusercontent.com/76618935/152949968-de8fbe67-e07c-4f0f-961e-3623b2c310e4.png)
+![output_40~50](https://user-images.githubusercontent.com/76618935/152950262-c5ce9c70-8bff-4f56-945b-0e856e3028b3.png)
+
